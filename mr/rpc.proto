@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option go_package = "mr_system/mr";
+
+package mr;
+
+service Coordinator {
+  rpc GetTask (TaskRequest) returns (TaskReply) {}
+}
+
+message TaskRequest {}
+
+message TaskReply {
+  string fileName = 1;
+}
