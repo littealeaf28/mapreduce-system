@@ -20,7 +20,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := mr.MakeCoordinator(os.Args[1:], 10)
+	m := mr.MakeCoordinator(os.Args[1:], 3)
+
+	// TODO: Make more gracefully sleep. 
 	for m.Done() == false {
 		time.Sleep(time.Second)
 	}

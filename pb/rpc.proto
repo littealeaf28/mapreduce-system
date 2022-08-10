@@ -2,16 +2,34 @@ syntax = "proto3";
 
 option go_package = "mr_system/pb";
 
+import "google/protobuf/empty.proto";
+
 package pb;
 
 service Coordinator {
-  rpc GetTask (TaskRequest) returns (TaskReply) {}
+  rpc GetTask (google.protobuf.Empty) returns (TaskReply) {}
+  rpc CompleteTask (TaskComplete) returns (google.protobuf.Empty) {}
 }
 
-message TaskRequest {}
-
 message TaskReply {
-  string fileName = 1;
-  int32 mapNum = 2;
-  int32 nReduce = 3;
+  int32 type = 1;
+  MapTask mapTask = 2;
+  ReduceTask reduceTask = 3;
+}
+
+message MapTask {
+  bool status = 1;
+  string fileName = 2;
+  int32 mapNum = 3;
+  int32 nReduce = 4;
+}
+
+message ReduceTask {
+  bool status = 1;
+  int32 reduceNum = 2;
+}
+
+message TaskComplete {
+  int32 type = 1;
+  int32 num = 2;
 }

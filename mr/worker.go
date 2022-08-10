@@ -8,13 +8,22 @@ import (
 	"fmt"
 	"os"
 	"io/ioutil"
+	"path/filepath"
+	"sort"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/empty"
 
 	"mr_system/pb"
 )
+
+type ByKey []*pb.KeyValue
+
+func (a ByKey) Len() int { return len(a) }
+func (a ByKey) Swap(i int, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i int, j int) bool { return a[i].Key < a[j].Key }
 
 func Worker(mapf func(string, string) []*pb.KeyValue,
 	reducef func(string, []string) string) {
@@ -25,35 +34,81 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	// Infinite loop until all tasks are done. Must let workers know somehow
+	for {
+		r, _ := c.GetTask(ctx, &empty.Empty{})
+		// if err != nil {
+		// 	log.Fatalf("could not retrieve task %v", err)
+		// }
 
-	r, err := c.GetTask(ctx, &pb.TaskRequest{})
-	if err != nil {
-		log.Fatalf("could not retrieve task %v", err)
-	}
+		// Switch
+		if r.GetType() == 0 {
+			break
+		} else if (r.GetType() == 1) {
+			task := r.GetMapTask()
 
-	kva := getKeyValuesFromFile(mapf, r.GetFileName())
-	organizedKvaChunks := make([][]*pb.KeyValue, r.GetNReduce())
-	for _, kv := range kva {
-		reduceNum := ihash(kv.Key) % r.GetNReduce()
-		organizedKvaChunks[reduceNum] = append(organizedKvaChunks[reduceNum], kv)
-	}
-	for reduceNum := int32(0); reduceNum < r.GetNReduce(); reduceNum++ {
-		serializeKvaChunk(organizedKvaChunks[reduceNum], r.GetMapNum(), reduceNum)
-	}
+			kva := getKeyValuesFromFile(mapf, task.GetFileName())
+			kvaBuckets := make([][]*pb.KeyValue, task.GetNReduce())
+			for _, kv := range kva {
+				reduceNum := ihash(kv.Key) % task.GetNReduce()
+				kvaBuckets[reduceNum] = append(kvaBuckets[reduceNum], kv)
+			}
+			for reduceNum := int32(0); reduceNum < task.GetNReduce(); reduceNum++ {
+				serializeKvaBucket(kvaBuckets[reduceNum], task.GetMapNum(), reduceNum)
+			}
 
-	// // Try to read one of them out
-	// in, err := ioutil.ReadFile(getFileName(r.GetMapNum(), 0))
-	// if err != nil {
-	// 	log.Fatalf("failed to read key values file: %v", err)
-	// }
-	// kvaReduce := &pb.KeyValuesFile{}
-	// if err := proto.Unmarshal(in, kvaReduce); err != nil {
-	// 	log.Fatalf("failed to decode key values file: %v", err)
-	// }
-	// for _, kv := range kvaReduce.KeyValues {
-	// 	log.Printf("%v %v", kv.Key, kv.Value)
-	// }
+			log.Printf("completed map task for %v", task.GetFileName())
+			c.CompleteTask(ctx, &pb.TaskComplete{Type: 1, Num: task.GetMapNum()})
+		} else if (r.GetType() == 2) {
+			task := r.GetReduceTask()
+
+			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("mr_temp/mr-*-%d", task.GetReduceNum()))
+			if err != nil {
+				log.Fatalf("could not find key value bucket files: %v", err)
+			}
+
+			kvaOutput := make([]*pb.KeyValue, 0)
+			for _, kvaBucketFileName := range kvaBucketFileNames {
+				in, err := ioutil.ReadFile(kvaBucketFileName)
+				if err != nil {
+					log.Fatalf("failed to read key values file: %v", err)
+				}
+				kvaReduce := &pb.KeyValuesFile{}
+				if err := proto.Unmarshal(in, kvaReduce); err != nil {
+					log.Fatalf("failed to decode key values file: %v", err)
+				}
+				kvaOutput = append(kvaOutput, kvaReduce.KeyValues...)
+			}
+
+			sort.Sort(ByKey(kvaOutput))
+
+			oname := fmt.Sprintf("mr_temp/mr-out-%d", task.GetReduceNum())
+			ofile, err := os.Create(oname)
+			if err != nil {
+				log.Fatalf("could not create output file: %v", err)
+			}
+			defer ofile.Close()
+
+			i := 0
+			for i < len(kvaOutput) {
+				j := i + 1
+				for j < len(kvaOutput) && kvaOutput[j].Key == kvaOutput[i].Key {
+					j++
+				}
+				values := []string{}
+				for k := i; k < j; k++ {
+					values = append(values, kvaOutput[k].Value)
+				}
+				output := reducef(kvaOutput[i].Key, values)
+
+				fmt.Fprintf(ofile, "%v %v\n", kvaOutput[i].Key, output)
+
+				i = j
+			}
+
+			log.Printf("completed reduce task %d", task.GetReduceNum())
+			c.CompleteTask(ctx, &pb.TaskComplete{Type: 2, Num: task.GetReduceNum()})
+		}
+	}
 }
 
 func getConn() *grpc.ClientConn {
@@ -89,7 +144,7 @@ func ihash(key string) int32 {
 	return int32(h.Sum32() & 0x7fffffff)
 }
 
-func serializeKvaChunk(kvaChunk []*pb.KeyValue, mapNum int32, reduceNum int32) {
+func serializeKvaBucket(kvaBucket []*pb.KeyValue, mapNum int32, reduceNum int32) {
 	getFileName := func(mapNum int32, reduceNum int32) string {
 		return fmt.Sprintf("mr_temp/mr-%d-%d", mapNum, reduceNum)
 	}
@@ -100,8 +155,8 @@ func serializeKvaChunk(kvaChunk []*pb.KeyValue, mapNum int32, reduceNum int32) {
 	}
 	defer f.Close()
 
-	kvaChunkFile := &pb.KeyValuesFile{KeyValues: kvaChunk}
-	out, err := proto.Marshal(kvaChunkFile)
+	kvaBucketFile := &pb.KeyValuesFile{KeyValues: kvaBucket}
+	out, err := proto.Marshal(kvaBucketFile)
 	if err != nil {
 		log.Fatalf("failed to encode key values file: %v", err)
 	}

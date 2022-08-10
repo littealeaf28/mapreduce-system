@@ -8,6 +8,7 @@ package pb
 
 import (
 	context "context"
+	empty "github.com/golang/protobuf/ptypes/empty"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -22,7 +23,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoordinatorClient interface {
-	GetTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskReply, error)
+	GetTask(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*TaskReply, error)
+	CompleteTask(ctx context.Context, in *TaskComplete, opts ...grpc.CallOption) (*empty.Empty, error)
 }
 
 type coordinatorClient struct {
@@ -33,9 +35,18 @@ func NewCoordinatorClient(cc grpc.ClientConnInterface) CoordinatorClient {
 	return &coordinatorClient{cc}
 }
 
-func (c *coordinatorClient) GetTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskReply, error) {
+func (c *coordinatorClient) GetTask(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*TaskReply, error) {
 	out := new(TaskReply)
 	err := c.cc.Invoke(ctx, "/pb.Coordinator/GetTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coordinatorClient) CompleteTask(ctx context.Context, in *TaskComplete, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/pb.Coordinator/CompleteTask", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +57,8 @@ func (c *coordinatorClient) GetTask(ctx context.Context, in *TaskRequest, opts .
 // All implementations must embed UnimplementedCoordinatorServer
 // for forward compatibility
 type CoordinatorServer interface {
-	GetTask(context.Context, *TaskRequest) (*TaskReply, error)
+	GetTask(context.Context, *empty.Empty) (*TaskReply, error)
+	CompleteTask(context.Context, *TaskComplete) (*empty.Empty, error)
 	mustEmbedUnimplementedCoordinatorServer()
 }
 
@@ -54,8 +66,11 @@ type CoordinatorServer interface {
 type UnimplementedCoordinatorServer struct {
 }
 
-func (UnimplementedCoordinatorServer) GetTask(context.Context, *TaskRequest) (*TaskReply, error) {
+func (UnimplementedCoordinatorServer) GetTask(context.Context, *empty.Empty) (*TaskReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTask not implemented")
+}
+func (UnimplementedCoordinatorServer) CompleteTask(context.Context, *TaskComplete) (*empty.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompleteTask not implemented")
 }
 func (UnimplementedCoordinatorServer) mustEmbedUnimplementedCoordinatorServer() {}
 
@@ -71,7 +86,7 @@ func RegisterCoordinatorServer(s grpc.ServiceRegistrar, srv CoordinatorServer) {
 }
 
 func _Coordinator_GetTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TaskRequest)
+	in := new(empty.Empty)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -83,7 +98,25 @@ func _Coordinator_GetTask_Handler(srv interface{}, ctx context.Context, dec func
 		FullMethod: "/pb.Coordinator/GetTask",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoordinatorServer).GetTask(ctx, req.(*TaskRequest))
+		return srv.(CoordinatorServer).GetTask(ctx, req.(*empty.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Coordinator_CompleteTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskComplete)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoordinatorServer).CompleteTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.Coordinator/CompleteTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoordinatorServer).CompleteTask(ctx, req.(*TaskComplete))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -98,6 +131,10 @@ var Coordinator_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTask",
 			Handler:    _Coordinator_GetTask_Handler,
+		},
+		{
+			MethodName: "CompleteTask",
+			Handler:    _Coordinator_CompleteTask_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
