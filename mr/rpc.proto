@@ -12,4 +12,6 @@ message TaskRequest {}
 
 message TaskReply {
   string fileName = 1;
+  int32 mapTaskNo = 2;
+  int32 nReduce = 3;
 }

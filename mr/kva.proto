@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+option go_package = "mr_system/mr";
+
+package mr;
+
+message KeyValuesFile {
+  repeated KeyValue keyValues = 1;
+}
+
+message KeyValue {
+  string key = 1;
+  string value = 2;
+}

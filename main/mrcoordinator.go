@@ -4,7 +4,7 @@ package main
 // start the coordinator process, which is implemented
 // in ../mr/coordinator.go
 //
-// go run mrcoordinator.go wc_inputfiles/pg*.txt
+// go run main/mrcoordinator.go wc_inputfiles/pg*.txt
 //
 
 import (
