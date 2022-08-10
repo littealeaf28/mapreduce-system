@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "mr_system/mr";
+option go_package = "mr_system/pb";
 
-package mr;
+package pb;
 
 service Coordinator {
   rpc GetTask (TaskRequest) returns (TaskReply) {}
@@ -12,6 +12,6 @@ message TaskRequest {}
 
 message TaskReply {
   string fileName = 1;
-  int32 mapTaskNo = 2;
+  int32 mapNum = 2;
   int32 nReduce = 3;
 }

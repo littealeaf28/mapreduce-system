@@ -5,15 +5,17 @@ package main
 // in ../mr/worker.go. typically there will be
 // multiple worker processes, talking to one coordinator.
 //
-// go run main/mrworker.go wc.so
+// go run main/mrworker/mrworker.go wc.so
 //
 
 import (
-	"mr_system/mr"
  	"plugin"
  	"os"
  	"fmt"
  	"log"
+
+	"mr_system/mr"
+	"mr_system/pb"
 )
 
 func main() {
@@ -31,7 +33,7 @@ func main() {
 // load the application Map and Reduce functions
 // from a plugin file, e.g. ../mrapps/wc.so
 //
-func loadPlugin(filename string) (func(string, string) []*mr.KeyValue, func(string, []string) string) {
+func loadPlugin(filename string) (func(string, string) []*pb.KeyValue, func(string, []string) string) {
 	p, err := plugin.Open(filename)
 	if err != nil {
 		log.Fatalf("cannot load plugin %v", filename)
@@ -40,7 +42,7 @@ func loadPlugin(filename string) (func(string, string) []*mr.KeyValue, func(stri
 	if err != nil {
 		log.Fatalf("cannot find Map in %v", filename)
 	}
-	mapf := xmapf.(func(string, string) []*mr.KeyValue)
+	mapf := xmapf.(func(string, string) []*pb.KeyValue)
 	xreducef, err := p.Lookup("Reduce")
 	if err != nil {
 		log.Fatalf("cannot find Reduce in %v", filename)

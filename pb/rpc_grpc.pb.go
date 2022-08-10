@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.2.0
 // - protoc             v3.6.1
-// source: mr/rpc.proto
+// source: pb/rpc.proto
 
-package mr
+package pb
 
 import (
 	context "context"
@@ -35,7 +35,7 @@ func NewCoordinatorClient(cc grpc.ClientConnInterface) CoordinatorClient {
 
 func (c *coordinatorClient) GetTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskReply, error) {
 	out := new(TaskReply)
-	err := c.cc.Invoke(ctx, "/mr.Coordinator/GetTask", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/pb.Coordinator/GetTask", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func _Coordinator_GetTask_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/mr.Coordinator/GetTask",
+		FullMethod: "/pb.Coordinator/GetTask",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoordinatorServer).GetTask(ctx, req.(*TaskRequest))
@@ -92,7 +92,7 @@ func _Coordinator_GetTask_Handler(srv interface{}, ctx context.Context, dec func
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Coordinator_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "mr.Coordinator",
+	ServiceName: "pb.Coordinator",
 	HandlerType: (*CoordinatorServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -101,5 +101,5 @@ var Coordinator_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "mr/rpc.proto",
+	Metadata: "pb/rpc.proto",
 }

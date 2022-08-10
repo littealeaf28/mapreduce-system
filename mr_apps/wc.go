@@ -7,7 +7,7 @@ package main
 //
 
 import (
-	"mr_system/mr"
+	"mr_system/pb"
 	"unicode"
 	"strings"
 	"strconv"
@@ -20,16 +20,16 @@ import (
 // and look only at the contents argument. The return value is a slice
 // of key/value pairs.
 //
-func Map(filename string, contents string) []*mr.KeyValue {
+func Map(filename string, contents string) []*pb.KeyValue {
 	// function to detect word separators.
 	ff := func(r rune) bool { return !unicode.IsLetter(r) }
 
 	// split contents into an array of words.
 	words := strings.FieldsFunc(contents, ff)
 
-	kva := make([]*mr.KeyValue, 0)
+	kva := make([]*pb.KeyValue, 0)
 	for _, w := range words {
-		kv := &mr.KeyValue{Key: w, Value: "1"}
+		kv := &pb.KeyValue{Key: w, Value: "1"}
 		kva = append(kva, kv)
 	}
 	return kva

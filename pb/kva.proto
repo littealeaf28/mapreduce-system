@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "mr_system/mr";
+option go_package = "mr_system/pb";
 
-package mr;
+package pb;
 
 message KeyValuesFile {
   repeated KeyValue keyValues = 1;

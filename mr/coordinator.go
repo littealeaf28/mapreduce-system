@@ -7,10 +7,12 @@ import (
 	"context"
 
 	"google.golang.org/grpc"
+
+	"mr_system/pb"
 )
 
 type Coordinator struct {
-	UnimplementedCoordinatorServer
+	pb.UnimplementedCoordinatorServer
 	files []string
 	nReduce int32
 }
@@ -22,7 +24,7 @@ func (c *Coordinator) serve() {
 	}
 	s := grpc.NewServer()
 
-	RegisterCoordinatorServer(s, c)
+	pb.RegisterCoordinatorServer(s, c)
 
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
@@ -30,10 +32,10 @@ func (c *Coordinator) serve() {
 	}
 }
 
-func (c *Coordinator) GetTask(ctx context.Context, in *TaskRequest) (*TaskReply, error) {
+func (c *Coordinator) GetTask(ctx context.Context, in *pb.TaskRequest) (*pb.TaskReply, error) {
 	log.Printf("received")
 	// Keep track of task number. Should only give one task at a time
-	return &TaskReply{FileName: c.files[0], MapTaskNo: 0, NReduce: c.nReduce}, nil
+	return &pb.TaskReply{FileName: c.files[0], MapNum: 0, NReduce: c.nReduce}, nil
 }
 
 //
