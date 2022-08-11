@@ -34,7 +34,7 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 	c := pb.NewCoordinatorClient(conn)
 	defer conn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60 * time.Second)
 	defer cancel()
 
 	for {
@@ -67,7 +67,7 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 		case 2:
 			task := r.GetReduceTask()
 
-			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("%vmr-*-%d", INTERMEDIATE_FILE_DIR, task.GetReduceNum()))
+			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("%vmr-[0-9]*-%d", INTERMEDIATE_FILE_DIR, task.GetReduceNum()))
 			if err != nil {
 				log.Fatalf("could not find key value bucket files: %v", err)
 			}
