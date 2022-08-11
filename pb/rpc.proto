@@ -11,6 +11,12 @@ service Coordinator {
   rpc CompleteTask (TaskComplete) returns (google.protobuf.Empty) {}
 }
 
+enum StatusType {
+  Incomplete = 0;
+  Processing = 1;
+  Complete = 2;
+}
+
 message TaskReply {
   int32 type = 1;
   MapTask mapTask = 2;
@@ -18,14 +24,14 @@ message TaskReply {
 }
 
 message MapTask {
-  bool status = 1;
+  StatusType status = 1;
   string fileName = 2;
   int32 mapNum = 3;
   int32 nReduce = 4;
 }
 
 message ReduceTask {
-  bool status = 1;
+  StatusType status = 1;
   int32 reduceNum = 2;
 }
 

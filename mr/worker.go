@@ -25,25 +25,30 @@ func (a ByKey) Len() int { return len(a) }
 func (a ByKey) Swap(i int, j int) { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i int, j int) bool { return a[i].Key < a[j].Key }
 
+// Changes if running test or not
+const INTERMEDIATE_FILE_DIR = ""
+
 func Worker(mapf func(string, string) []*pb.KeyValue,
 	reducef func(string, []string) string) {
 	conn := getConn()
 	c := pb.NewCoordinatorClient(conn)
 	defer conn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20 * time.Second)
 	defer cancel()
 
 	for {
-		r, _ := c.GetTask(ctx, &empty.Empty{})
-		// if err != nil {
-		// 	log.Fatalf("could not retrieve task %v", err)
-		// }
+		r, err := c.GetTask(ctx, &empty.Empty{})
+		if err != nil {
+			log.Printf("worker exiting, %v", err)
+			return
+		}
 
-		// Switch
-		if r.GetType() == 0 {
-			break
-		} else if (r.GetType() == 1) {
+		switch r.GetType() {
+		case 0:
+			time.Sleep(time.Second)
+
+		case 1:
 			task := r.GetMapTask()
 
 			kva := getKeyValuesFromFile(mapf, task.GetFileName())
@@ -58,52 +63,23 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 
 			log.Printf("completed map task for %v", task.GetFileName())
 			c.CompleteTask(ctx, &pb.TaskComplete{Type: 1, Num: task.GetMapNum()})
-		} else if (r.GetType() == 2) {
+
+		case 2:
 			task := r.GetReduceTask()
 
-			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("mr_temp/mr-*-%d", task.GetReduceNum()))
+			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("%vmr-*-%d", INTERMEDIATE_FILE_DIR, task.GetReduceNum()))
 			if err != nil {
 				log.Fatalf("could not find key value bucket files: %v", err)
 			}
 
 			kvaOutput := make([]*pb.KeyValue, 0)
 			for _, kvaBucketFileName := range kvaBucketFileNames {
-				in, err := ioutil.ReadFile(kvaBucketFileName)
-				if err != nil {
-					log.Fatalf("failed to read key values file: %v", err)
-				}
-				kvaReduce := &pb.KeyValuesFile{}
-				if err := proto.Unmarshal(in, kvaReduce); err != nil {
-					log.Fatalf("failed to decode key values file: %v", err)
-				}
-				kvaOutput = append(kvaOutput, kvaReduce.KeyValues...)
+				kvaReduce := deserializeKvaBucket(kvaBucketFileName)
+				kvaOutput = append(kvaOutput, kvaReduce...)
 			}
-
 			sort.Sort(ByKey(kvaOutput))
 
-			oname := fmt.Sprintf("mr_temp/mr-out-%d", task.GetReduceNum())
-			ofile, err := os.Create(oname)
-			if err != nil {
-				log.Fatalf("could not create output file: %v", err)
-			}
-			defer ofile.Close()
-
-			i := 0
-			for i < len(kvaOutput) {
-				j := i + 1
-				for j < len(kvaOutput) && kvaOutput[j].Key == kvaOutput[i].Key {
-					j++
-				}
-				values := []string{}
-				for k := i; k < j; k++ {
-					values = append(values, kvaOutput[k].Value)
-				}
-				output := reducef(kvaOutput[i].Key, values)
-
-				fmt.Fprintf(ofile, "%v %v\n", kvaOutput[i].Key, output)
-
-				i = j
-			}
+			outputReduceResults(reducef, task.GetReduceNum(), kvaOutput)
 
 			log.Printf("completed reduce task %d", task.GetReduceNum())
 			c.CompleteTask(ctx, &pb.TaskComplete{Type: 2, Num: task.GetReduceNum()})
@@ -146,7 +122,7 @@ func ihash(key string) int32 {
 
 func serializeKvaBucket(kvaBucket []*pb.KeyValue, mapNum int32, reduceNum int32) {
 	getFileName := func(mapNum int32, reduceNum int32) string {
-		return fmt.Sprintf("mr_temp/mr-%d-%d", mapNum, reduceNum)
+		return fmt.Sprintf("%vmr-%d-%d", INTERMEDIATE_FILE_DIR, mapNum, reduceNum)
 	}
 
 	f, err := os.Create(getFileName(mapNum, reduceNum))
@@ -162,5 +138,42 @@ func serializeKvaBucket(kvaBucket []*pb.KeyValue, mapNum int32, reduceNum int32)
 	}
 	if err := ioutil.WriteFile(getFileName(mapNum, reduceNum), out, 0644); err != nil {
 		log.Fatalf("failed to write key values file: %v", err)
+	}
+}
+
+func deserializeKvaBucket(kvaBucketFileName string) []*pb.KeyValue {
+	in, err := ioutil.ReadFile(kvaBucketFileName)
+	if err != nil {
+		log.Fatalf("failed to read key values file: %v", err)
+	}
+	kvaReduce := &pb.KeyValuesFile{}
+	if err := proto.Unmarshal(in, kvaReduce); err != nil {
+		log.Fatalf("failed to decode key values file: %v", err)
+	}
+	return kvaReduce.KeyValues
+}
+
+func outputReduceResults(reducef func(string, []string) string, reduceNum int32, kvaOutput []*pb.KeyValue) {
+	ofile, err := os.Create(fmt.Sprintf("%vmr-out-%d", INTERMEDIATE_FILE_DIR, reduceNum))
+	if err != nil {
+		log.Fatalf("could not create output file: %v", err)
+	}
+	defer ofile.Close()
+
+	i := 0
+	for i < len(kvaOutput) {
+		j := i + 1
+		for j < len(kvaOutput) && kvaOutput[j].Key == kvaOutput[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, kvaOutput[k].Value)
+		}
+		output := reducef(kvaOutput[i].Key, values)
+
+		fmt.Fprintf(ofile, "%v %v\n", kvaOutput[i].Key, output)
+
+		i = j
 	}
 }
