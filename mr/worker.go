@@ -25,8 +25,8 @@ func (a ByKey) Len() int { return len(a) }
 func (a ByKey) Swap(i int, j int) { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i int, j int) bool { return a[i].Key < a[j].Key }
 
-// Changes if running test or not
-const INTERMEDIATE_FILE_DIR = ""
+// changes depending on if running test or not
+const INTERMEDIATE_FILES_DIR = ""
 
 func Worker(mapf func(string, string) []*pb.KeyValue,
 	reducef func(string, []string) string) {
@@ -34,8 +34,8 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 	c := pb.NewCoordinatorClient(conn)
 	defer conn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60 * time.Second)
-	defer cancel()
+	// worker has no timeouts for its requests
+	ctx := context.Background()
 
 	for {
 		r, err := c.GetTask(ctx, &empty.Empty{})
@@ -67,7 +67,7 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 		case 2:
 			task := r.GetReduceTask()
 
-			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("%vmr-[0-9]*-%d", INTERMEDIATE_FILE_DIR, task.GetReduceNum()))
+			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("%vmr-[0-9]*-%d", INTERMEDIATE_FILES_DIR, task.GetReduceNum()))
 			if err != nil {
 				log.Fatalf("could not find key value bucket files: %v", err)
 			}
@@ -97,7 +97,7 @@ func getConn() *grpc.ClientConn {
 }
 
 func getKeyValuesFromFile(mapf func(string, string) []*pb.KeyValue, fileName string) []*pb.KeyValue {
-	log.Printf("reading file: %s", fileName)
+	// log.Printf("reading file: %s", fileName)
 	file, err := os.Open(fileName)
 	if err != nil {
 		log.Fatalf("cannot open %v", fileName)
@@ -121,13 +121,9 @@ func ihash(key string) int32 {
 }
 
 func serializeKvaBucket(kvaBucket []*pb.KeyValue, mapNum int32, reduceNum int32) {
-	getFileName := func(mapNum int32, reduceNum int32) string {
-		return fmt.Sprintf("%vmr-%d-%d", INTERMEDIATE_FILE_DIR, mapNum, reduceNum)
-	}
-
-	f, err := os.Create(getFileName(mapNum, reduceNum))
+	f, err := ioutil.TempFile(fmt.Sprintf("%v", INTERMEDIATE_FILES_DIR), "*")
 	if err != nil {
-		log.Fatalf("failed to create file: %v", err)
+		log.Fatalf("failed to create intermediate file: %v", err)
 	}
 	defer f.Close()
 
@@ -136,8 +132,12 @@ func serializeKvaBucket(kvaBucket []*pb.KeyValue, mapNum int32, reduceNum int32)
 	if err != nil {
 		log.Fatalf("failed to encode key values file: %v", err)
 	}
-	if err := ioutil.WriteFile(getFileName(mapNum, reduceNum), out, 0644); err != nil {
+	if err := ioutil.WriteFile(f.Name(), out, 0644); err != nil {
 		log.Fatalf("failed to write key values file: %v", err)
+	}
+
+	if err := os.Rename(fmt.Sprintf("%v%v", INTERMEDIATE_FILES_DIR, f.Name()), fmt.Sprintf("%vmr-%d-%d", INTERMEDIATE_FILES_DIR, mapNum, reduceNum)); err != nil {
+		log.Printf("another worker must've already completed task: %v", err)
 	}
 }
 
@@ -154,11 +154,12 @@ func deserializeKvaBucket(kvaBucketFileName string) []*pb.KeyValue {
 }
 
 func outputReduceResults(reducef func(string, []string) string, reduceNum int32, kvaOutput []*pb.KeyValue) {
-	ofile, err := os.Create(fmt.Sprintf("%vmr-out-%d", INTERMEDIATE_FILE_DIR, reduceNum))
+	f, err := ioutil.TempFile(fmt.Sprintf("%v", INTERMEDIATE_FILES_DIR), "*")
+	// f, err := os.Create(fmt.Sprintf("%vmr-out-%d", INTERMEDIATE_FILES_DIR, reduceNum))
 	if err != nil {
 		log.Fatalf("could not create output file: %v", err)
 	}
-	defer ofile.Close()
+	defer f.Close()
 
 	i := 0
 	for i < len(kvaOutput) {
@@ -172,8 +173,12 @@ func outputReduceResults(reducef func(string, []string) string, reduceNum int32,
 		}
 		output := reducef(kvaOutput[i].Key, values)
 
-		fmt.Fprintf(ofile, "%v %v\n", kvaOutput[i].Key, output)
+		fmt.Fprintf(f, "%v %v\n", kvaOutput[i].Key, output)
 
 		i = j
+	}
+
+	if err := os.Rename(fmt.Sprintf("%v%v", INTERMEDIATE_FILES_DIR, f.Name()), fmt.Sprintf("%vmr-out-%d", INTERMEDIATE_FILES_DIR, reduceNum)); err != nil {
+		log.Printf("another worker must've already completed task: %v", err)
 	}
 }

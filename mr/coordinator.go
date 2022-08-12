@@ -6,6 +6,7 @@ import (
 	"log"
 	"context"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"mr_system/pb"
@@ -32,7 +33,7 @@ func (c *Coordinator) serve() {
 	
 	log.Printf("server listening at %v", lis.Addr())
 
-	// Not sure best way to resolve errors if server go routine fails
+	// Hmm: not sure best way to resolve errors if server go routine fails
 	// errs := make(chan error, 1)
 	// go func() { errs <- s.Serve(lis) }()
 	// if err := <-errs; err != nil {
@@ -49,8 +50,25 @@ func (c *Coordinator) GetTask(ctx context.Context, in *empty.Empty) (*pb.TaskRep
 		for i, mapTask := range c.mapTasks {
 			if (mapTask.GetStatus() == pb.StatusType_Incomplete) {
 				c.mapTasks[i].Status = pb.StatusType_Processing
+
+				go func() {
+					time.Sleep(10 * time.Second)
+
+					c.l.Lock()
+					defer c.l.Unlock()
+
+					if (c.mapTasks[i].Status == pb.StatusType_Processing) {
+						c.mapTasks[i].Status = pb.StatusType_Incomplete
+					}
+				}()
+
 				return &pb.TaskReply{Type: 1, MapTask: mapTask}, nil
 			}
+		}
+	}
+	for _, mapTask := range c.mapTasks {
+		if (mapTask.GetStatus() == pb.StatusType_Processing) {
+			return &pb.TaskReply{Type: 0}, nil
 		}
 	}
 	c.isMapComplete = true
@@ -59,8 +77,25 @@ func (c *Coordinator) GetTask(ctx context.Context, in *empty.Empty) (*pb.TaskRep
 		for i, reduceTask := range c.reduceTasks {
 			if (reduceTask.GetStatus() == pb.StatusType_Incomplete) {
 				c.reduceTasks[i].Status = pb.StatusType_Processing
+				
+				go func() {
+					time.Sleep(10 * time.Second)
+
+					c.l.Lock()
+					defer c.l.Unlock()
+
+					if (c.reduceTasks[i].Status == pb.StatusType_Processing) {
+						c.reduceTasks[i].Status = pb.StatusType_Incomplete
+					}
+				}()
+
 				return &pb.TaskReply{Type: 2, ReduceTask: reduceTask}, nil
 			}
+		}
+	}
+	for _, reduceTask := range c.reduceTasks {
+		if (reduceTask.GetStatus() == pb.StatusType_Processing) {
+			return &pb.TaskReply{Type: 0}, nil
 		}
 	}
 	c.isReduceComplete = true
@@ -90,18 +125,6 @@ func (c *Coordinator) Done() bool {
 	c.l.RLock()
 	defer c.l.RUnlock()
 
-	// log.Printf("Checking, %v", c.mapTasks)
-
-	// for _, mapTask := range c.mapTasks {
-	// 	if (mapTask.GetStatus() == pb.StatusType_Incomplete || mapTask.GetStatus() == pb.StatusType_Processing) {
-	// 		return false
-	// 	}
-	// }
-
-	// return true
-
-	// return c.isMapComplete
-
 	return c.isMapComplete && c.isReduceComplete
 }
 
@@ -117,7 +140,6 @@ func MakeCoordinator(files []string, nReduce int32) *Coordinator {
 	}
 
 	c := Coordinator{isMapComplete: false, isReduceComplete: false, mapTasks: mapTasks, reduceTasks: reduceTasks}
-	// c := Coordinator{mapTasks: mapTasks}
 
 	c.serve()
 	return &c
