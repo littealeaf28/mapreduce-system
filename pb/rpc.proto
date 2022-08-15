@@ -17,8 +17,14 @@ enum StatusType {
   Complete = 2;
 }
 
+enum TaskType {
+  Empty = 0;
+  Map = 1;
+  Reduce = 2;
+}
+
 message TaskReply {
-  int32 type = 1;
+  TaskType type = 1;
   MapTask mapTask = 2;
   ReduceTask reduceTask = 3;
 }
@@ -36,6 +42,6 @@ message ReduceTask {
 }
 
 message TaskComplete {
-  int32 type = 1;
+  TaskType type = 1;
   int32 num = 2;
 }

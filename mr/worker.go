@@ -13,7 +13,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	// "google.golang.org/grpc/resolver/passthrough"
 	"google.golang.org/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 
@@ -46,10 +45,10 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 		}
 
 		switch r.GetType() {
-		case 0:
+		case pb.TaskType_Empty:
 			time.Sleep(time.Second)
 
-		case 1:
+		case pb.TaskType_Map:
 			task := r.GetMapTask()
 
 			kva := getKeyValuesFromFile(mapf, task.GetFileName())
@@ -65,7 +64,7 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 			log.Printf("completed map task %d", task.GetMapNum())
 			c.CompleteTask(ctx, &pb.TaskComplete{Type: 1, Num: task.GetMapNum()})
 
-		case 2:
+		case pb.TaskType_Reduce:
 			task := r.GetReduceTask()
 
 			kvaBucketFileNames, err := filepath.Glob(fmt.Sprintf("%vmr-[0-9]*-%d", INTERMEDIATE_FILES_DIR, task.GetReduceNum()))

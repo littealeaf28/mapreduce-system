@@ -39,7 +39,7 @@ func (c *Coordinator) serve() {
 	s := grpc.NewServer()
 
 	pb.RegisterCoordinatorServer(s, c)
-	
+
 	log.Printf("server listening at %v", lis.Addr())
 
 	// Hmm: not sure best way to resolve errors if server go routine fails
@@ -51,21 +51,17 @@ func (c *Coordinator) serve() {
 	go s.Serve(lis)
 }
 
+// could use generics to simplify code
 func (c *Coordinator) waitMapTask(i int) {
 	// time.Sleep(10 * time.Second)
 	timer := time.NewTimer(10 * time.Second)
 	<-timer.C
 
-	// FIrst thing I'll do is switch from sleep to timer
-	// THen what I'll do is I'll put console swithces to check for bugs
-
-	log.Printf("Waited 10 seconds for map task %d at %v", i, time.Now())
-
 	c.l.Lock()
 	defer c.l.Unlock()
 
-	log.Printf("Attempting to write to map task %d at %v", i, time.Now())
 	if (c.mapTasks[i].Status == pb.StatusType_Processing) {
+		log.Printf("Retrying map task %d", i)
 		c.mapTasks[i].Status = pb.StatusType_Incomplete
 	}
 }
@@ -75,13 +71,11 @@ func (c *Coordinator) waitReduceTask(i int) {
 	timer := time.NewTimer(10 * time.Second)
 	<-timer.C
 
-	log.Printf("Waited 10 seconds for map task %d at %v", i, time.Now())
-
 	c.l.Lock()
 	defer c.l.Unlock()
 
-	log.Printf("Attempting to write to map task %d at %v", i, time.Now())
 	if (c.reduceTasks[i].Status == pb.StatusType_Processing) {
+		log.Printf("Retrying reduce task %d", i)
 		c.reduceTasks[i].Status = pb.StatusType_Incomplete
 	}
 }
@@ -97,17 +91,15 @@ func (c *Coordinator) GetTask(ctx context.Context, in *empty.Empty) (*pb.TaskRep
 
 				go c.waitMapTask(i)
 
-				log.Printf("Finished giving map task %d at %v", i, time.Now())
-
 				taskCopy := pb.MapTask{}
 				copier.Copy(&taskCopy, &c.mapTasks[i])
-				return &pb.TaskReply{Type: 1, MapTask: &taskCopy}, nil
+				return &pb.TaskReply{Type: pb.TaskType_Map, MapTask: &taskCopy}, nil
 			}
 		}
 	}
 	for _, mapTask := range c.mapTasks {
 		if (mapTask.GetStatus() == pb.StatusType_Processing) {
-			return &pb.TaskReply{Type: 0}, nil
+			return &pb.TaskReply{Type: pb.TaskType_Empty}, nil
 		}
 	}
 	c.isMapComplete = true
@@ -121,18 +113,18 @@ func (c *Coordinator) GetTask(ctx context.Context, in *empty.Empty) (*pb.TaskRep
 
 				taskCopy := pb.ReduceTask{}
 				copier.Copy(&taskCopy, &c.reduceTasks[i])
-				return &pb.TaskReply{Type: 2, ReduceTask: &taskCopy}, nil
+				return &pb.TaskReply{Type: pb.TaskType_Reduce, ReduceTask: &taskCopy}, nil
 			}
 		}
 	}
 	for _, reduceTask := range c.reduceTasks {
 		if (reduceTask.GetStatus() == pb.StatusType_Processing) {
-			return &pb.TaskReply{Type: 0}, nil
+			return &pb.TaskReply{Type: pb.TaskType_Empty}, nil
 		}
 	}
 	c.isReduceComplete = true
 
-	return &pb.TaskReply{Type: 0}, nil
+	return &pb.TaskReply{Type: pb.TaskType_Empty}, nil
 }
 
 func (c *Coordinator) CompleteTask(ctx context.Context, in *pb.TaskComplete) (*empty.Empty, error) {
@@ -140,9 +132,9 @@ func (c *Coordinator) CompleteTask(ctx context.Context, in *pb.TaskComplete) (*e
 	defer c.l.Unlock()
 
 	log.Printf("coordinator, complete task %d", in.GetNum())
-	if (in.GetType() == 1) {
+	if (in.GetType() == pb.TaskType_Map) {
 		c.mapTasks[in.GetNum()].Status = pb.StatusType_Complete
-	} else if (in.GetType() == 2) {
+	} else if (in.GetType() == pb.TaskType_Reduce) {
 		c.reduceTasks[in.GetNum()].Status = pb.StatusType_Complete
 	}
 
