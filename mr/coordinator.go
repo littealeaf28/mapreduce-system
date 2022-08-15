@@ -7,10 +7,12 @@ import (
 	"context"
 	"sync"
 	"time"
+	"os"
 
 	"google.golang.org/grpc"
 	"mr_system/pb"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/jinzhu/copier"
 )
 
 type Coordinator struct {
@@ -22,8 +24,15 @@ type Coordinator struct {
 	reduceTasks []*pb.ReduceTask
 }
 
+func coordSocket() string {
+	return fmt.Sprintf("/var/tmp/824-mr-%d", os.Getuid())
+}
+
 func (c *Coordinator) serve() {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 1234))
+	// lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 1234))4
+	sockname := coordSocket()
+	os.Remove(sockname)
+	lis, err := net.Listen("unix", sockname)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
@@ -42,6 +51,41 @@ func (c *Coordinator) serve() {
 	go s.Serve(lis)
 }
 
+func (c *Coordinator) waitMapTask(i int) {
+	// time.Sleep(10 * time.Second)
+	timer := time.NewTimer(10 * time.Second)
+	<-timer.C
+
+	// FIrst thing I'll do is switch from sleep to timer
+	// THen what I'll do is I'll put console swithces to check for bugs
+
+	log.Printf("Waited 10 seconds for map task %d at %v", i, time.Now())
+
+	c.l.Lock()
+	defer c.l.Unlock()
+
+	log.Printf("Attempting to write to map task %d at %v", i, time.Now())
+	if (c.mapTasks[i].Status == pb.StatusType_Processing) {
+		c.mapTasks[i].Status = pb.StatusType_Incomplete
+	}
+}
+
+func (c *Coordinator) waitReduceTask(i int) {
+	// time.Sleep(10 * time.Second)
+	timer := time.NewTimer(10 * time.Second)
+	<-timer.C
+
+	log.Printf("Waited 10 seconds for map task %d at %v", i, time.Now())
+
+	c.l.Lock()
+	defer c.l.Unlock()
+
+	log.Printf("Attempting to write to map task %d at %v", i, time.Now())
+	if (c.reduceTasks[i].Status == pb.StatusType_Processing) {
+		c.reduceTasks[i].Status = pb.StatusType_Incomplete
+	}
+}
+
 func (c *Coordinator) GetTask(ctx context.Context, in *empty.Empty) (*pb.TaskReply, error) {
 	c.l.Lock()
 	defer c.l.Unlock()
@@ -51,18 +95,13 @@ func (c *Coordinator) GetTask(ctx context.Context, in *empty.Empty) (*pb.TaskRep
 			if (mapTask.GetStatus() == pb.StatusType_Incomplete) {
 				c.mapTasks[i].Status = pb.StatusType_Processing
 
-				go func() {
-					time.Sleep(10 * time.Second)
+				go c.waitMapTask(i)
 
-					c.l.Lock()
-					defer c.l.Unlock()
+				log.Printf("Finished giving map task %d at %v", i, time.Now())
 
-					if (c.mapTasks[i].Status == pb.StatusType_Processing) {
-						c.mapTasks[i].Status = pb.StatusType_Incomplete
-					}
-				}()
-
-				return &pb.TaskReply{Type: 1, MapTask: mapTask}, nil
+				taskCopy := pb.MapTask{}
+				copier.Copy(&taskCopy, &c.mapTasks[i])
+				return &pb.TaskReply{Type: 1, MapTask: &taskCopy}, nil
 			}
 		}
 	}
@@ -78,18 +117,11 @@ func (c *Coordinator) GetTask(ctx context.Context, in *empty.Empty) (*pb.TaskRep
 			if (reduceTask.GetStatus() == pb.StatusType_Incomplete) {
 				c.reduceTasks[i].Status = pb.StatusType_Processing
 				
-				go func() {
-					time.Sleep(10 * time.Second)
+				go c.waitReduceTask(i)
 
-					c.l.Lock()
-					defer c.l.Unlock()
-
-					if (c.reduceTasks[i].Status == pb.StatusType_Processing) {
-						c.reduceTasks[i].Status = pb.StatusType_Incomplete
-					}
-				}()
-
-				return &pb.TaskReply{Type: 2, ReduceTask: reduceTask}, nil
+				taskCopy := pb.ReduceTask{}
+				copier.Copy(&taskCopy, &c.reduceTasks[i])
+				return &pb.TaskReply{Type: 2, ReduceTask: &taskCopy}, nil
 			}
 		}
 	}

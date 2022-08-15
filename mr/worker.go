@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	// "google.golang.org/grpc/resolver/passthrough"
 	"google.golang.org/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 
@@ -61,7 +62,7 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 				serializeKvaBucket(kvaBuckets[reduceNum], task.GetMapNum(), reduceNum)
 			}
 
-			log.Printf("completed map task for %v", task.GetFileName())
+			log.Printf("completed map task %d", task.GetMapNum())
 			c.CompleteTask(ctx, &pb.TaskComplete{Type: 1, Num: task.GetMapNum()})
 
 		case 2:
@@ -88,7 +89,8 @@ func Worker(mapf func(string, string) []*pb.KeyValue,
 }
 
 func getConn() *grpc.ClientConn {
-	conn, err := grpc.Dial("localhost:1234", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// conn, err := grpc.Dial("localhost:1234", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(fmt.Sprintf("unix:///%v", coordSocket()), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
